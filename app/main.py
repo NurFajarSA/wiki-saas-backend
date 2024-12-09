@@ -5,14 +5,13 @@ import logging
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import List
-from . import crud, models, schemas, deploy
-from .database import SessionLocal, engine
+import crud, models, schemas, deploy, database
 from sqlalchemy.orm import Session
 import os
 import docker
 
 # Inisialisasi database
-models.Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Dependency untuk mendapatkan sesi DB
 def get_db():
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         yield db
     finally:
