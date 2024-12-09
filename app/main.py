@@ -140,7 +140,7 @@ def deploy_wiki(wiki: WikiCreate, db: Session = Depends(get_db)):
     #     raise HTTPException(status_code=500, detail=str(e))
 
     # Simpan ke database
-    url = f"https://{domain}"
+    url = f"https://{domain}:{port}"
     try:
         db_instance = crud.create_wiki_instance(db, name=wiki.name, slug=wiki.slug, url=url)
         logger.info(f"Saved wiki instance '{wiki.slug}' to database with URL '{url}'.")
