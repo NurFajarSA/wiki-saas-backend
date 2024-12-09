@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import List
-from .deploy import deploy_wikijs, configure_nginx, obtain_ssl_certificate
+from .deploy import deploy_wikijs, configure_nginx
 from . import crud, models, schemas
 from .database import SessionLocal, engine
 from sqlalchemy.orm import Session
@@ -52,9 +52,6 @@ def deploy_wiki_endpoint(request: schemas.DeployRequest, db: Session = Depends(g
 
         # Konfigurasi NGINX
         configure_nginx(domain, port)
-
-        # Karena sertifikat SSL sudah ditangani, tidak perlu dipanggil lagi
-        # obtain_ssl_certificate(domain)  # Sudah ditangani dalam deploy_wikijs
 
         # Kembalikan respons
         db_instance = db.query(models.DeployedInstance).filter(models.DeployedInstance.port == port).first()
