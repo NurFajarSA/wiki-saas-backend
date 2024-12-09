@@ -1,6 +1,6 @@
 # app/deploy.py
 
-import docker
+import docker  # Pastikan modul docker diimpor
 import os
 import re
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "wikinet")
 WIKI_IMAGE = "requarks/wiki:2"  # Sesuaikan versi jika diperlukan
-BASE_DOMAIN = os.getenv("BASE_DOMAIN")  # e.g., domain.com
+BASE_DOMAIN = os.getenv("BASE_DOMAIN")  # e.g., nurfajar.tech
 
 client = docker.from_env()
 
@@ -66,8 +66,10 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
     container_name = f"wiki_{slug}"
     port = get_available_port()
     domain = f"{slug}.{BASE_DOMAIN}"
-    url = f"https://{domain}"
-
+    url = f"https://{domain}"  # Sesuaikan jika Anda menggunakan HTTPS
+    
+    logger.info(f"Deploying wiki.js dengan slug '{slug}' pada domain '{domain}' dan port '{port}'.")
+    
     # Periksa apakah container sudah ada
     try:
         container = client.containers.get(container_name)
@@ -79,11 +81,12 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
     # Tentukan volume untuk data persistent
     volume_path = os.path.join(os.getcwd(), 'data', slug)
     os.makedirs(volume_path, exist_ok=True)
-
+    logger.info(f"Data akan disimpan di '{volume_path}'.")
+    
     # Jalankan container dengan volume
     env_vars = {
         "DB_TYPE": "postgres",
-        "DB_HOST": os.getenv("DB_HOST", "localhost"),
+        "DB_HOST": os.getenv("DB_HOST", "db"),
         "DB_PORT": os.getenv("DB_PORT", "5432"),
         "DB_USER": os.getenv("DB_USER"),
         "DB_PASS": os.getenv("DB_PASS"),
@@ -91,13 +94,15 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
         "WIKI_ADMIN_EMAIL": os.getenv("WIKI_ADMIN_EMAIL"),
         "WIKI_ADMIN_PASSWORD": os.getenv("WIKI_ADMIN_PASSWORD"),
     }
-
+    
+    logger.info(f"Environment variables: {env_vars}")
+    
     try:
         container = client.containers.run(
             WIKI_IMAGE,
             name=container_name,
             environment=env_vars,
-            network=DOCKER_NETWORK,
+            network=DOCKER_NETWORK,  # Menggunakan 'network' sebagai string
             ports={'3000/tcp': port},  # Wiki.js default port adalah 3000
             volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},  # Bind mount untuk data
             detach=True,
@@ -113,5 +118,5 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
     except docker.errors.APIError as e:
         logger.error(f"API error saat menjalankan container: {e}")
         raise Exception(f"API error saat menjalankan container: {e}")
-
+    
     return domain, port
