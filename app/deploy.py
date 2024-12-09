@@ -97,7 +97,7 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
             WIKI_IMAGE,
             name=container_name,
             environment=env_vars,
-            networks=[DOCKER_NETWORK],
+            network=DOCKER_NETWORK,
             ports={'3000/tcp': port},  # Wiki.js default port adalah 3000
             volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},  # Bind mount untuk data
             detach=True,
