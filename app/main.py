@@ -46,11 +46,11 @@ def deploy_wiki_endpoint(request: schemas.DeployRequest, db: Session = Depends(g
     """
     try:
         instance_create = schemas.InstanceCreate(name=request.name)
-        domain, port = deploy_wikijs(instance_create)
+        domain, port = deploy.deploy_wikijs(instance_create)
         logger.info(f"Deployed Wiki.js instance on port {port}.")
 
         # Konfigurasi NGINX
-        configure_nginx(domain, port)
+        deploy.configure_nginx(domain, port)
 
         # Kembalikan respons
         db_instance = db.query(models.DeployedInstance).filter(models.DeployedInstance.port == port).first()
