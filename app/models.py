@@ -2,9 +2,9 @@
 
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.sql import func
-from .database import Base
+import database
 
-class DeployedInstance(Base):
+class DeployedInstance(database.Base):
     __tablename__ = "deployed_instances"
 
     id = Column(Integer, primary_key=True, index=True)

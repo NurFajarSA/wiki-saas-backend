@@ -3,8 +3,7 @@
 import docker
 import os
 import logging
-from .database import SessionLocal
-from . import models, crud, schemas
+import models, crud, schemas, database
 from dotenv import load_dotenv
 from typing import Tuple
 import socket
@@ -67,7 +66,7 @@ def deploy_wikijs(instance_create: schemas.InstanceCreate) -> Tuple[str, int]:
     Raises:
         Exception: Jika deployment gagal.
     """
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         # Pastikan jaringan Docker tersedia
         ensure_network()

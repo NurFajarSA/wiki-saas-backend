@@ -1,7 +1,7 @@
 # app/crud.py
 
 from sqlalchemy.orm import Session
-from . import models, schemas
+import models, schemas
 
 def get_instance(db: Session, instance_id: int):
     return db.query(models.DeployedInstance).filter(models.DeployedInstance.id == instance_id).first()
