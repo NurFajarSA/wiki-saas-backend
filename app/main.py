@@ -5,8 +5,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import List
-from app.deploy import deploy_wikijs, configure_nginx
-from . import crud, models, schemas
+from . import crud, models, schemas, deploy
 from .database import SessionLocal, engine
 from sqlalchemy.orm import Session
 import os
