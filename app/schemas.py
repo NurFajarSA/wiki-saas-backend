@@ -14,7 +14,7 @@ class DeployResponse(BaseModel):
     status: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Instance(BaseModel):
     id: int
@@ -23,7 +23,7 @@ class Instance(BaseModel):
     status: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class InstanceCreate(BaseModel):
     name: str

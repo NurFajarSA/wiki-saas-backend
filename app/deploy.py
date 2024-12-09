@@ -139,3 +139,42 @@ def deploy_wikijs(instance_create: schemas.InstanceCreate) -> Tuple[str, int]:
         raise e
     finally:
         db.close()
+
+def configure_nginx(domain: str, port: int):
+    """Mengonfigurasi NGINX untuk domain yang sama dengan port berbeda."""
+    nginx_conf = f"""
+    server {{
+        listen {port} ssl;
+        server_name {domain};
+
+        ssl_certificate /etc/letsencrypt/live/{domain}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;
+        include /etc/letsencrypt/options-ssl-nginx.conf;
+        ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+        location / {{
+            proxy_pass http://localhost:{port};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+    }}
+    """
+
+    config_path = f"/etc/nginx/sites-available/{domain}_{port}"
+    symlink_path = f"/etc/nginx/sites-enabled/{domain}_{port}"
+
+    try:
+        with open(config_path, 'w') as f:
+            f.write(nginx_conf)
+        subprocess.run(['sudo', 'ln', '-sf', config_path, symlink_path], check=True)
+        subprocess.run(['sudo', 'nginx', '-t'], check=True)
+        subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], check=True)
+        logger.info(f"NGINX configuration successful for domain: {domain} on port: {port}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"NGINX configuration failed: {e}")
+        raise Exception(f"NGINX configuration failed: {e}")
+    except PermissionError as e:
+        logger.error(f"Permission denied during NGINX configuration: {e}")
+        raise Exception(f"Permission denied during NGINX configuration: {e}")

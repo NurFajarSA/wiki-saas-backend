@@ -26,7 +26,7 @@ services:
     depends_on:
       - db
     volumes:
-      - ./app:/app
+      - ./app:/app         # Memetakan direktori app di host ke /app di container
       - ./data:/app/data
 
   db:
