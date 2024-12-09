@@ -1,11 +1,11 @@
-import docker  # Pastikan ini diimpor
+# app/deploy.py
+
+import docker  # Pastikan modul docker diimpor
 import os
 import re
 import logging
 from dotenv import load_dotenv
 from typing import Tuple
-import socket
-import time
 
 load_dotenv()
 
@@ -30,6 +30,7 @@ def ensure_network():
 
 def get_available_port(start_port=8001, end_port=9000) -> int:
     """Mencari port yang tersedia dalam rentang yang ditentukan."""
+    import socket
     for port in range(start_port, end_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(('localhost', port)) != 0:
@@ -37,28 +38,16 @@ def get_available_port(start_port=8001, end_port=9000) -> int:
                 return port
     raise Exception("No available ports found in the specified range.")
 
-def validate_slug(slug: str) -> bool:
-    """Validasi slug agar hanya mengandung karakter yang diizinkan."""
-    pattern = re.compile(r'^[a-zA-Z0-9\-]+$')
-    return bool(pattern.match(slug))
+def deploy_wikijs(slug) -> Tuple[str, int]:
 
-def deploy_wikijs(port: int) -> Tuple[str, int]:
-    """
-    Deploy instance wiki.js pada port tertentu.
-    
-    Args:
-        port (int): Port untuk instance wiki.js.
-    
-    Returns:
-        Tuple[str, int]: Domain dan port yang digunakan oleh instance.
-    
-    Raises:
-        Exception: Jika deployment gagal.
-    """
-    domain = BASE_DOMAIN  # Semua instance menggunakan domain yang sama
-    logger.info(f"Deploying wiki.js pada domain '{domain}' dan port '{port}'.")
 
+    ensure_network()
+    port = get_available_port()
     container_name = f"wiki_{port}"
+    domain = f"{BASE_DOMAIN}"
+    url = f"https://{domain}"  # Sesuaikan jika Anda menggunakan HTTPS
+    
+    logger.info(f"Deploying wiki.js dengan slug '{slug}' pada domain '{domain}' dan port '{port}'.")
     
     # Periksa apakah container sudah ada
     try:
@@ -69,14 +58,14 @@ def deploy_wikijs(port: int) -> Tuple[str, int]:
         logger.info(f"Container dengan nama '{container_name}' tidak ditemukan. Melanjutkan deployment.")
     
     # Tentukan volume untuk data persistent
-    volume_path = os.path.join(os.getcwd(), 'data', str(port))
+    volume_path = os.path.join(os.getcwd(), 'data', slug)
     os.makedirs(volume_path, exist_ok=True)
     logger.info(f"Data akan disimpan di '{volume_path}'.")
     
     # Jalankan container dengan volume
     env_vars = {
         "DB_TYPE": "postgres",
-        "DB_HOST": os.getenv("DB_HOST", "localhost"),  # Perhatikan perubahan ke 'localhost'
+        "DB_HOST": os.getenv("DB_HOST", "db"),
         "DB_PORT": os.getenv("DB_PORT", "5432"),
         "DB_USER": os.getenv("DB_USER"),
         "DB_PASS": os.getenv("DB_PASS"),
