@@ -1,122 +1,141 @@
 # app/deploy.py
 
-import docker  # Pastikan modul docker diimpor
+import docker
 import os
-import re
 import logging
+from .database import SessionLocal
+from . import models, crud, schemas
 from dotenv import load_dotenv
 from typing import Tuple
+import socket
+import time
+import subprocess
 
 load_dotenv()
 
-# Konfigurasi logging
+# Inisialisasi logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "wikinet")
-WIKI_IMAGE = "requarks/wiki:2"  # Sesuaikan versi jika diperlukan
-BASE_DOMAIN = os.getenv("BASE_DOMAIN")  # e.g., nurfajar.tech
+WIKI_IMAGE = "requarks/wiki:2" 
+BASE_DOMAIN = os.getenv("BASE_DOMAIN") 
 
+# Inisialisasi Docker client
 client = docker.from_env()
 
 def ensure_network():
-    """Memastikan jaringan Docker ada, jika tidak, buat jaringan baru."""
+    """Pastikan jaringan Docker ada, jika tidak, buat jaringan baru."""
     try:
-        client.networks.get(DOCKER_NETWORK)
-        logger.info(f"Jaringan Docker '{DOCKER_NETWORK}' sudah ada.")
+        network = client.networks.get(DOCKER_NETWORK)
+        logger.info(f"Docker network '{DOCKER_NETWORK}' sudah ada.")
     except docker.errors.NotFound:
         client.networks.create(DOCKER_NETWORK, driver="bridge")
-        logger.info(f"Jaringan Docker '{DOCKER_NETWORK}' telah dibuat.")
+        logger.info(f"Docker network '{DOCKER_NETWORK}' telah dibuat.")
 
 def get_available_port(start_port=8001, end_port=9000) -> int:
-    """Mencari port yang tersedia dalam rentang yang ditentukan."""
-    import socket
+    """Cari port yang tersedia dalam rentang yang ditentukan."""
     for port in range(start_port, end_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(('localhost', port)) != 0:
                 logger.info(f"Port {port} tersedia.")
                 return port
-    raise Exception("No available ports found in the specified range.")
+    raise Exception("Tidak ada port yang tersedia dalam rentang yang ditentukan.")
 
-def validate_slug(slug: str) -> bool:
-    """Validasi slug agar hanya mengandung karakter yang diizinkan."""
-    pattern = re.compile(r'^[a-zA-Z0-9\-]+$')
-    return bool(pattern.match(slug))
+def create_database(db_name: str):
+    """Buat database PostgreSQL baru."""
+    try:
+        subprocess.run(
+            ['sudo', '-u', 'postgres', 'psql', '-c', f"CREATE DATABASE {db_name};"],
+            check=True
+        )
+        logger.info(f"Database '{db_name}' berhasil dibuat.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Gagal membuat database '{db_name}': {e}")
+        raise Exception(f"Gagal membuat database '{db_name}': {e}")
 
-def deploy_wikijs(slug: str) -> Tuple[str, int]:
+def deploy_wikijs(instance_create: schemas.InstanceCreate) -> Tuple[str, int]:
     """
-    Deploy instance wiki.js dengan slug tertentu.
-    
+    Deploy instance Wiki.js baru.
+
     Args:
-        slug (str): Slug untuk instance wiki.js.
-    
+        instance_create (schemas.InstanceCreate): Data untuk instance yang akan di-deploy.
+
     Returns:
         Tuple[str, int]: Domain dan port yang digunakan oleh instance.
-    
+
     Raises:
-        ValueError: Jika slug tidak valid.
-        Exception: Jika container sudah ada atau deployment gagal.
+        Exception: Jika deployment gagal.
     """
-    # Validasi slug
-    if not validate_slug(slug):
-        logger.error(f"Invalid slug '{slug}'. Slug hanya boleh mengandung huruf, angka, dan tanda hubung.")
-        raise ValueError("Invalid slug. Slug hanya boleh mengandung huruf, angka, dan tanda hubung.")
-    
-    ensure_network()
-    container_name = f"wiki_{slug}"
-    port = get_available_port()
-    domain = f"{slug}.{BASE_DOMAIN}"
-    url = f"https://{domain}"  # Sesuaikan jika Anda menggunakan HTTPS
-    
-    logger.info(f"Deploying wiki.js dengan slug '{slug}' pada domain '{domain}' dan port '{port}'.")
-    
-    # Periksa apakah container sudah ada
+    db = SessionLocal()
     try:
-        container = client.containers.get(container_name)
-        logger.error(f"Container dengan nama '{container_name}' sudah ada.")
-        raise Exception("Container sudah ada")
-    except docker.errors.NotFound:
-        logger.info(f"Container dengan nama '{container_name}' tidak ditemukan. Melanjutkan deployment.")
-    
-    # Tentukan volume untuk data persistent
-    volume_path = os.path.join(os.getcwd(), 'data', slug)
-    os.makedirs(volume_path, exist_ok=True)
-    logger.info(f"Data akan disimpan di '{volume_path}'.")
-    
-    # Jalankan container dengan volume
-    env_vars = {
-        "DB_TYPE": "postgres",
-        "DB_HOST": os.getenv("DB_HOST", "db"),
-        "DB_PORT": os.getenv("DB_PORT", "5432"),
-        "DB_USER": os.getenv("DB_USER"),
-        "DB_PASS": os.getenv("DB_PASS"),
-        "DB_NAME": os.getenv("DB_NAME"),
-        "WIKI_ADMIN_EMAIL": os.getenv("WIKI_ADMIN_EMAIL"),
-        "WIKI_ADMIN_PASSWORD": os.getenv("WIKI_ADMIN_PASSWORD"),
-    }
-    
-    logger.info(f"Environment variables: {env_vars}")
-    
-    try:
-        container = client.containers.run(
-            WIKI_IMAGE,
-            name=container_name,
-            environment=env_vars,
-            network=DOCKER_NETWORK,  # Menggunakan 'network' sebagai string
-            ports={'3000/tcp': port},  # Wiki.js default port adalah 3000
-            volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},  # Bind mount untuk data
-            detach=True,
-            restart_policy={"Name": "always"},
-        )
-        logger.info(f"Container '{container_name}' berhasil dijalankan pada port {port}.")
-    except docker.errors.ContainerError as e:
-        logger.error(f"Error saat menjalankan container: {e}")
-        raise Exception(f"Error saat menjalankan container: {e}")
-    except docker.errors.ImageNotFound as e:
-        logger.error(f"Image '{WIKI_IMAGE}' tidak ditemukan: {e}")
-        raise Exception(f"Image '{WIKI_IMAGE}' tidak ditemukan: {e}")
-    except docker.errors.APIError as e:
-        logger.error(f"API error saat menjalankan container: {e}")
-        raise Exception(f"API error saat menjalankan container: {e}")
-    
-    return domain, port
+        # Pastikan jaringan Docker tersedia
+        ensure_network()
+
+        # Cari port yang tersedia
+        port = get_available_port()
+
+        # Definisikan variabel domain dan lainnya
+        domain = BASE_DOMAIN  # Menggunakan satu domain
+        container_name = f"wiki_{port}"
+        db_name = f"wikisaas_db_{port}"
+
+        # Buat database untuk instance ini
+        create_database(db_name)
+
+        # Definisikan variabel lingkungan untuk Wiki.js
+        env_vars = {
+            "DB_TYPE": "postgres",
+            "DB_HOST": os.getenv("DB_HOST", "db"),
+            "DB_PORT": os.getenv("DB_PORT", "5432"),
+            "DB_USER": os.getenv("DB_USER"),
+            "DB_PASS": os.getenv("DB_PASS"),
+            "DB_NAME": db_name,
+            "WIKI_ADMIN_EMAIL": os.getenv("WIKI_ADMIN_EMAIL"),
+            "WIKI_ADMIN_PASSWORD": os.getenv("WIKI_ADMIN_PASSWORD"),
+        }
+
+        # Definisikan path volume
+        volume_path = os.path.join(os.getcwd(), 'data', str(port))
+        os.makedirs(volume_path, exist_ok=True)
+        logger.info(f"Data akan disimpan di '{volume_path}'.")
+
+        # Jalankan container Docker
+        try:
+            container = client.containers.run(
+                WIKI_IMAGE,
+                name=container_name,
+                environment=env_vars,
+                network=DOCKER_NETWORK,
+                ports={'3000/tcp': port},
+                volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},
+                detach=True,
+                restart_policy={"Name": "always"},
+            )
+            logger.info(f"Container '{container_name}' berhasil dijalankan pada port {port}.")
+        except docker.errors.ContainerError as e:
+            logger.error(f"Error saat menjalankan container: {e}")
+            raise Exception(f"Error saat menjalankan container: {e}")
+        except docker.errors.ImageNotFound as e:
+            logger.error(f"Image '{WIKI_IMAGE}' tidak ditemukan: {e}")
+            raise Exception(f"Image '{WIKI_IMAGE}' tidak ditemukan: {e}")
+        except docker.errors.APIError as e:
+            logger.error(f"API error saat menjalankan container: {e}")
+            raise Exception(f"API error saat menjalankan container: {e}")
+
+        # Buat record instance di database
+        db_instance = crud.create_instance(db, instance_create)
+        db_instance.port = port
+        db_instance.container_name = container_name
+        db_instance.db_name = db_name
+        db_instance.status = "deployed"
+        db.commit()
+        db.refresh(db_instance)
+
+        return domain, port
+
+    except Exception as e:
+        logger.error(f"Deployment gagal: {e}")
+        raise e
+    finally:
+        db.close()
