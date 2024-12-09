@@ -15,8 +15,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "wikinet")
-WIKI_IMAGE = "requarks/wiki:2"  # Sesuaikan versi jika diperlukan
-BASE_DOMAIN = os.getenv("BASE_DOMAIN")  # e.g., nurfajar.tech
+WIKI_IMAGE = "requarks/wiki:2"  
+BASE_DOMAIN = os.getenv("BASE_DOMAIN")
+BASE_URL = os.getenv("BASE_URL")
 
 client = docker.from_env()
 
@@ -89,8 +90,8 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
             name=container_name,
             environment=env_vars,
             network=DOCKER_NETWORK,
-            ports={'3000/tcp': port},  # Wiki.js default port adalah 3000
-            volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},  # Bind mount untuk data
+            ports={'3000/tcp': port}, 
+            volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},
             detach=True,
             restart_policy={"Name": "always"},
         )
@@ -105,4 +106,4 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
         logger.error(f"API error saat menjalankan container: {e}")
         raise Exception(f"API error saat menjalankan container: {e}")
 
-    return domain, port
+    return BASE_URL, port
