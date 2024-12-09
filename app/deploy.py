@@ -65,6 +65,7 @@ def deploy_wikijs(slug: str) -> Tuple[str, int]:
     # Tentukan volume untuk data persistent
     volume_path = os.path.join(os.getcwd(), 'data', slug)
     os.makedirs(volume_path, exist_ok=True)
+    os.chmod(volume_path, 0o777)
     logger.info(f"Data akan disimpan di '{volume_path}'.")
 
     # Definisikan variabel lingkungan untuk Wiki.js
