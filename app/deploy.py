@@ -1,11 +1,12 @@
 # app/deploy.py
 
-import docker  # Pastikan modul docker diimpor
+import docker 
 import os
-import re
 import logging
 from dotenv import load_dotenv
 from typing import Tuple
+import socket
+import subprocess
 
 load_dotenv()
 
@@ -30,7 +31,6 @@ def ensure_network():
 
 def get_available_port(start_port=8001, end_port=9000) -> int:
     """Mencari port yang tersedia dalam rentang yang ditentukan."""
-    import socket
     for port in range(start_port, end_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(('localhost', port)) != 0:
@@ -38,50 +38,56 @@ def get_available_port(start_port=8001, end_port=9000) -> int:
                 return port
     raise Exception("No available ports found in the specified range.")
 
-def deploy_wikijs(slug) -> Tuple[str, int]:
+def create_database(db_name: str):
+    """Buat database PostgreSQL baru."""
+    try:
+        subprocess.run(
+            ['sudo', '-u', 'postgres', 'psql', '-c', f"CREATE DATABASE {db_name};"],
+            check=True
+        )
+        logger.info(f"Database '{db_name}' berhasil dibuat.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Gagal membuat database '{db_name}': {e}")
+        raise Exception(f"Gagal membuat database '{db_name}': {e}")
 
-
+def deploy_wikijs(slug: str) -> Tuple[str, int]:
     ensure_network()
     port = get_available_port()
     container_name = f"wiki_{port}"
     domain = f"{BASE_DOMAIN}"
-    url = f"https://{domain}"  # Sesuaikan jika Anda menggunakan HTTPS
-    
+    db_name = f"wikisaas_db_{slug}"
+
     logger.info(f"Deploying wiki.js dengan slug '{slug}' pada domain '{domain}' dan port '{port}'.")
-    
-    # Periksa apakah container sudah ada
-    try:
-        container = client.containers.get(container_name)
-        logger.error(f"Container dengan nama '{container_name}' sudah ada.")
-        raise Exception("Container sudah ada")
-    except docker.errors.NotFound:
-        logger.info(f"Container dengan nama '{container_name}' tidak ditemukan. Melanjutkan deployment.")
-    
+
+    # Buat database untuk instance ini
+    create_database(db_name)
+
     # Tentukan volume untuk data persistent
     volume_path = os.path.join(os.getcwd(), 'data', slug)
     os.makedirs(volume_path, exist_ok=True)
     logger.info(f"Data akan disimpan di '{volume_path}'.")
-    
-    # Jalankan container dengan volume
+
+    # Definisikan variabel lingkungan untuk Wiki.js
     env_vars = {
         "DB_TYPE": "postgres",
-        "DB_HOST": os.getenv("DB_HOST", "db"),
+        "DB_HOST": os.getenv("DB_HOST", "localhost"),
         "DB_PORT": os.getenv("DB_PORT", "5432"),
         "DB_USER": os.getenv("DB_USER"),
         "DB_PASS": os.getenv("DB_PASS"),
-        "DB_NAME": os.getenv("DB_NAME"),
+        "DB_NAME": db_name,
         "WIKI_ADMIN_EMAIL": os.getenv("WIKI_ADMIN_EMAIL"),
         "WIKI_ADMIN_PASSWORD": os.getenv("WIKI_ADMIN_PASSWORD"),
     }
-    
+
     logger.info(f"Environment variables: {env_vars}")
-    
+
+    # Jalankan container dengan volume
     try:
         container = client.containers.run(
             WIKI_IMAGE,
             name=container_name,
             environment=env_vars,
-            network=DOCKER_NETWORK,  # Menggunakan 'network' sebagai string
+            network=DOCKER_NETWORK,
             ports={'3000/tcp': port},  # Wiki.js default port adalah 3000
             volumes={volume_path: {'bind': '/wiki/data', 'mode': 'rw'}},  # Bind mount untuk data
             detach=True,
@@ -97,5 +103,5 @@ def deploy_wikijs(slug) -> Tuple[str, int]:
     except docker.errors.APIError as e:
         logger.error(f"API error saat menjalankan container: {e}")
         raise Exception(f"API error saat menjalankan container: {e}")
-    
+
     return domain, port
