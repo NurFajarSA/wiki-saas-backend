@@ -1,25 +1,24 @@
 # app/main.py
 
+import os
 import subprocess
 import logging
-from fastapi import FastAPI, HTTPException, Depends, Header
-from pydantic import BaseModel
-from typing import List
-import crud, models, schemas, deploy, database
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-import os
-import docker
+from pydantic import BaseModel
+from . import models, crud, database, deploy
+from .database import engine
 
-# Inisialisasi database
-models.Base.metadata.create_all(bind=database.engine)
-
-app = FastAPI()
+# Membuat tabel database saat aplikasi dijalankan pertama kali
+models.Base.metadata.create_all(bind=engine)
 
 # Konfigurasi logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Dependency untuk mendapatkan sesi DB
+app = FastAPI()
+
+# Dependency untuk mendapatkan sesi database
 def get_db():
     db = database.SessionLocal()
     try:
@@ -27,119 +26,127 @@ def get_db():
     finally:
         db.close()
 
-# API Token untuk otentikasi (opsional)
-API_TOKEN = os.getenv("API_TOKEN", "your_default_api_token")
+# Schema Pydantic
+class WikiCreate(BaseModel):
+    id: int
+    name: str
+    slug: str
 
-def verify_api_token(token: str = Header(...)):
-    if token != API_TOKEN:
-        logger.warning("Invalid API Token")
-        raise HTTPException(status_code=403, detail="Forbidden")
+class WikiResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    url: str
 
-# Inisialisasi Docker client
-client = docker.from_env()
+    class Config:
+        orm_mode = True
 
-@app.post("/deploy", response_model=schemas.DeployResponse, dependencies=[Depends(verify_api_token)])
-def deploy_wiki_endpoint(request: schemas.DeployRequest, db: Session = Depends(get_db)):
-    """
-    Endpoint untuk mendepoy instance Wiki.js baru.
-    """
+# def configure_nginx(domain: str, port: int):
+#     try:
+#         logger.info(f"Configuring NGINX for domain: {domain} on port: {port}")
+#         subprocess.run(
+#             ["sudo", "/usr/local/bin/nginx_config.sh", domain, str(port)],
+#             check=True
+#         )
+#         logger.info("NGINX configuration successful.")
+#     except subprocess.CalledProcessError as e:
+#         logger.error(f"NGINX configuration failed: {e}")
+#         raise Exception(f"NGINX configuration failed: {e}")
+
+# def obtain_ssl_certificate(domain: str):
+#     try:
+#         logger.info(f"Obtaining SSL certificate for domain: {domain}")
+#         subprocess.run(
+#             [
+#                 "sudo", "certbot", "--nginx", 
+#                 "-d", domain, 
+#                 "--non-interactive", 
+#                 "--agree-tos", 
+#                 "-m", "admin@yourdomain.com"  # Ganti dengan email Anda
+#             ],
+#             check=True
+#         )
+#         logger.info("SSL certificate obtained successfully.")
+#     except subprocess.CalledProcessError as e:
+#         logger.error(f"SSL Certificate acquisition failed: {e}")
+#         raise Exception(f"SSL Certificate acquisition failed: {e}")
+
+@app.post("/deploy", response_model=WikiResponse)
+def deploy_wiki(wiki: WikiCreate, db: Session = Depends(get_db)):
+    # Cek apakah slug sudah ada
+    # existing = db.query(models.WikiInstance).filter(models.WikiInstance.slug == wiki.slug).first()
+    # if existing:
+    #     logger.warning(f"Deploy failed: Slug '{wiki.slug}' already exists.")
+    #     raise HTTPException(status_code=400, detail="Slug sudah ada")
+
+    # Deploy wiki.js
     try:
-        instance_create = schemas.InstanceCreate(name=request.name)
-        domain, port = deploy.deploy_wikijs(instance_create)
-        logger.info(f"Deployed Wiki.js instance on port {port}.")
-
-        # Konfigurasi NGINX
-        deploy.configure_nginx(domain, port)
-
-        # Kembalikan respons
-        db_instance = db.query(models.DeployedInstance).filter(models.DeployedInstance.port == port).first()
-        return schemas.DeployResponse(
-            id=db_instance.id,
-            name=db_instance.name,
-            port=db_instance.port,
-            status=db_instance.status
-        )
-
+        domain, port = deploy.deploy_wikijs(wiki.slug)
+        logger.info(f"Deployed wiki.js for slug '{wiki.slug}' on domain '{domain}' and port '{port}'.")
     except Exception as e:
-        logger.error(f"Deployment failed: {e}")
+        logger.error(f"Deployment failed for slug '{wiki.slug}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/instances", response_model=List[schemas.Instance], dependencies=[Depends(verify_api_token)])
-def read_instances(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """
-    Mendapatkan daftar semua instance yang telah di-deploy.
-    """
-    instances = crud.get_instances(db, skip=skip, limit=limit)
-    return instances
+    # Konfigurasikan NGINX
+    # try:
+    #     configure_nginx(domain, port)
+    # except Exception as e:
+    #     logger.error(f"NGINX configuration failed for slug '{wiki.slug}': {e}")
+    #     # Jika konfigurasi NGINX gagal, hentikan dan hapus container
+    #     client = docker.from_env()
+    #     container_name = f"wiki_{wiki.slug}"
+    #     try:
+    #         container = client.containers.get(container_name)
+    #         container.stop()
+    #         container.remove()
+    #         logger.info(f"Stopped and removed container '{container_name}' due to NGINX failure.")
+    #     except docker.errors.NotFound:
+    #         logger.warning(f"Container '{container_name}' not found during cleanup.")
+    #     except Exception as cleanup_error:
+    #         logger.error(f"Error during container cleanup: {cleanup_error}")
+    #     raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/instances/{instance_id}", response_model=schemas.Instance, dependencies=[Depends(verify_api_token)])
-def read_instance(instance_id: int, db: Session = Depends(get_db)):
-    """
-    Mendapatkan detail dari sebuah instance berdasarkan ID.
-    """
-    db_instance = crud.get_instance(db, instance_id)
-    if db_instance is None:
-        raise HTTPException(status_code=404, detail="Instance not found")
-    return db_instance
+    # Dapatkan Sertifikat SSL
+    # try:
+    #     obtain_ssl_certificate(domain)
+    # except Exception as e:
+    #     logger.error(f"SSL acquisition failed for domain '{domain}': {e}")
+    #     # Jika SSL gagal, hapus konfigurasi NGINX dan container
+    #     try:
+    #         os.remove(f"/etc/nginx/sites-enabled/{domain}")
+    #         os.remove(f"/etc/nginx/sites-available/{domain}")
+    #         subprocess.run(["sudo", "systemctl", "reload", "nginx"], check=True)
+    #         logger.info(f"Removed NGINX configuration for domain '{domain}' due to SSL failure.")
+    #     except FileNotFoundError:
+    #         logger.warning(f"NGINX configuration files for domain '{domain}' not found during cleanup.")
+    #     except subprocess.CalledProcessError as reload_error:
+    #         logger.error(f"Failed to reload NGINX during cleanup: {reload_error}")
+    #     except Exception as cleanup_error:
+    #         logger.error(f"Error during NGINX cleanup: {cleanup_error}")
+        
+    #     # Hentikan dan hapus container
+    #     client = docker.from_env()
+    #     container_name = f"wiki_{wiki.slug}"
+    #     try:
+    #         container = client.containers.get(container_name)
+    #         container.stop()
+    #         container.remove()
+    #         logger.info(f"Stopped and removed container '{container_name}' due to SSL failure.")
+    #     except docker.errors.NotFound:
+    #         logger.warning(f"Container '{container_name}' not found during SSL cleanup.")
+    #     except Exception as cleanup_error:
+    #         logger.error(f"Error during container cleanup after SSL failure: {cleanup_error}")
+        
+    #     raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/instances/{instance_id}", response_model=schemas.Instance, dependencies=[Depends(verify_api_token)])
-def update_instance_endpoint(instance_id: int, instance_update: schemas.InstanceUpdate, db: Session = Depends(get_db)):
-    """
-    Memperbarui informasi sebuah instance.
-    """
-    db_instance = crud.update_instance(db, instance_update, instance_id)
-    if db_instance is None:
-        raise HTTPException(status_code=404, detail="Instance not found")
-    return db_instance
+    # Simpan ke database
+    url = f"https://{domain}"
+    try:
+        db_instance = crud.create_wiki_instance(db, name=wiki.name, slug=wiki.slug, url=url)
+        logger.info(f"Saved wiki instance '{wiki.slug}' to database with URL '{url}'.")
+    except Exception as db_error:
+        logger.error(f"Failed to save wiki instance '{wiki.slug}' to database: {db_error}")
+        # Opsional: Anda bisa menghentikan dan menghapus container serta konfigurasi NGINX jika penyimpanan database gagal
+        raise HTTPException(status_code=500, detail="Gagal menyimpan ke database.")
 
-@app.delete("/instances/{instance_id}", response_model=schemas.Instance, dependencies=[Depends(verify_api_token)])
-def delete_instance_endpoint(instance_id: int, db: Session = Depends(get_db)):
-    """
-    Menghapus sebuah instance yang telah di-deploy.
-    """
-    db_instance = crud.delete_instance(db, instance_id)
-    if db_instance is None:
-        raise HTTPException(status_code=404, detail="Instance not found")
-    
-    # Stop dan hapus Docker container
-    try:
-        container = client.containers.get(db_instance.container_name)
-        container.stop()
-        container.remove()
-        logger.info(f"Container '{db_instance.container_name}' telah dihentikan dan dihapus.")
-    except docker.errors.NotFound:
-        logger.warning(f"Container '{db_instance.container_name}' tidak ditemukan.")
-    except docker.errors.APIError as e:
-        logger.error(f"Error saat menghapus container '{db_instance.container_name}': {e}")
-        raise HTTPException(status_code=500, detail=f"Error saat menghapus container: {e}")
-    
-    # Hapus konfigurasi NGINX
-    config_filename = f"{db_instance.name}_{db_instance.port}"
-    config_path = f"/etc/nginx/sites-enabled/{config_filename}"
-    available_path = f"/etc/nginx/sites-available/{config_filename}"
-    try:
-        if os.path.islink(config_path):
-            os.unlink(config_path)
-            logger.info(f"Symlink '{config_path}' telah dihapus.")
-        if os.path.exists(available_path):
-            os.remove(available_path)
-            logger.info(f"File konfigurasi '{available_path}' telah dihapus.")
-        # Test dan reload NGINX
-        subprocess.run(['sudo', 'nginx', '-t'], check=True)
-        subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], check=True)
-    except Exception as e:
-        logger.error(f"Error saat menghapus konfigurasi NGINX: {e}")
-        raise HTTPException(status_code=500, detail=f"Error saat menghapus konfigurasi NGINX: {e}")
-    
-    # Hapus database
-    try:
-        subprocess.run(
-            ['sudo', '-u', 'postgres', 'psql', '-c', f"DROP DATABASE IF EXISTS {db_instance.db_name};"],
-            check=True
-        )
-        logger.info(f"Database '{db_instance.db_name}' telah dihapus.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Gagal menghapus database '{db_instance.db_name}': {e}")
-        raise HTTPException(status_code=500, detail=f"Gagal menghapus database: {e}")
-    
     return db_instance
