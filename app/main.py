@@ -27,11 +27,13 @@ def get_db():
 # Schema Pydantic
 class WikiCreate(BaseModel):
     name: str
+    org_id: str
 
 class WikiResponse(BaseModel):
     id: int
     name: str
     url: str
+    org_id: str
 
     class Config:
         orm_mode = True
@@ -48,10 +50,17 @@ def deploy_wiki(wiki: WikiCreate, db: Session = Depends(get_db)):
     # Simpan ke database
     url = f"{base_url}:{port}"
     try:
-        db_instance = crud.create_wiki_instance(db, name=wiki.name, url=url)
+        db_instance = crud.create_wiki_instance(db, name=wiki.name, url=url, org_id=wiki.org_id)
         logger.info(f"Saved wiki instance '{wiki.name}' to database with URL '{url}'.")
     except Exception as db_error:
         logger.error(f"Failed to save wiki instance '{wiki.name}' to database: {db_error}")
         raise HTTPException(status_code=500, detail="Gagal menyimpan ke database.")
 
+    return db_instance
+
+@app.get("/wiki/{org_id}", response_model=WikiResponse)
+def get_wiki_instance(org_id: str, db: Session = Depends(get_db)):
+    db_instance = crud.get_wiki_instance(db, org_id)
+    if db_instance is None:
+        raise HTTPException(status_code=404, detail="Wiki instance not found")
     return db_instance
