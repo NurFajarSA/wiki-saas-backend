@@ -41,7 +41,6 @@ def get_available_port(start_port=8001, end_port=9000) -> int:
 
 def create_database(db_name: str):
     """Buat database PostgreSQL baru."""
-    db_name = db_name.lower().replace("-", "_")
     try:
         subprocess.run(
             ['sudo', '-u', 'postgres', 'psql', '-c', f"CREATE DATABASE {db_name};"],
@@ -58,6 +57,7 @@ def deploy_wikijs(name: str) -> Tuple[str, int]:
     container_name = f"wiki_{port}"
     domain = f"{BASE_DOMAIN}"
     db_name = f"wikisaas_db_{name}"
+    db_name = db_name.lower().replace("-", "_")
 
     logger.info(f"Deploying wiki.js dengan name '{name}' pada domain '{domain}' dan port '{port}'.")
 
