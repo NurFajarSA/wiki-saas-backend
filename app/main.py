@@ -26,14 +26,11 @@ def get_db():
 
 # Schema Pydantic
 class WikiCreate(BaseModel):
-    id: str
     name: str
-    slug: str
 
 class WikiResponse(BaseModel):
-    id: str
+    id: int
     name: str
-    slug: str
     url: str
 
     class Config:
@@ -42,19 +39,19 @@ class WikiResponse(BaseModel):
 @app.post("/deploy", response_model=WikiResponse)
 def deploy_wiki(wiki: WikiCreate, db: Session = Depends(get_db)):
     try:
-        base_url, port = deploy.deploy_wikijs(wiki.slug)
-        logger.info(f"Deployed wiki.js for slug '{wiki.slug}' on base_url '{base_url}' and port '{port}'.")
+        base_url, port = deploy.deploy_wikijs(wiki.name)
+        logger.info(f"Deployed wiki.js for name '{wiki.name}' on base_url '{base_url}' and port '{port}'.")
     except Exception as e:
-        logger.error(f"Deployment failed for slug '{wiki.slug}': {e}")
+        logger.error(f"Deployment failed for name '{wiki.name}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     # Simpan ke database
     url = f"{base_url}:{port}"
     try:
-        db_instance = crud.create_wiki_instance(db, name=wiki.name, slug=wiki.slug, url=url)
-        logger.info(f"Saved wiki instance '{wiki.slug}' to database with URL '{url}'.")
+        db_instance = crud.create_wiki_instance(db, name=wiki.name, url=url)
+        logger.info(f"Saved wiki instance '{wiki.name}' to database with URL '{url}'.")
     except Exception as db_error:
-        logger.error(f"Failed to save wiki instance '{wiki.slug}' to database: {db_error}")
+        logger.error(f"Failed to save wiki instance '{wiki.name}' to database: {db_error}")
         raise HTTPException(status_code=500, detail="Gagal menyimpan ke database.")
 
     return db_instance

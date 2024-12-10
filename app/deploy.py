@@ -51,20 +51,20 @@ def create_database(db_name: str):
         logger.error(f"Gagal membuat database '{db_name}': {e}")
         raise Exception(f"Gagal membuat database '{db_name}': {e}")
 
-def deploy_wikijs(slug: str) -> Tuple[str, int]:
+def deploy_wikijs(name: str) -> Tuple[str, int]:
     ensure_network()
     port = get_available_port()
     container_name = f"wiki_{port}"
     domain = f"{BASE_DOMAIN}"
-    db_name = f"wikisaas_db_{slug}"
+    db_name = f"wikisaas_db_{name}"
 
-    logger.info(f"Deploying wiki.js dengan slug '{slug}' pada domain '{domain}' dan port '{port}'.")
+    logger.info(f"Deploying wiki.js dengan name '{name}' pada domain '{domain}' dan port '{port}'.")
 
     # Buat database untuk instance ini
     create_database(db_name)
 
     # Tentukan volume untuk data persistent
-    volume_path = os.path.join(os.getcwd(), 'data', slug)
+    volume_path = os.path.join(os.getcwd(), 'data', name)
     os.makedirs(volume_path, exist_ok=True)
     os.chmod(volume_path, 0o777)
     logger.info(f"Data akan disimpan di '{volume_path}'.")
