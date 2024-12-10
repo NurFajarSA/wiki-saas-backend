@@ -26,12 +26,12 @@ def get_db():
 
 # Schema Pydantic
 class WikiCreate(BaseModel):
-    id: int
+    id: str
     name: str
     slug: str
 
 class WikiResponse(BaseModel):
-    id: int
+    id: str
     name: str
     slug: str
     url: str

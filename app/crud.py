@@ -9,5 +9,5 @@ def create_wiki_instance(db: Session, name: str, slug: str, url: str):
     db.refresh(db_instance)
     return db_instance
 
-def get_wiki_instance(db: Session, wiki_id: int):
+def get_wiki_instance(db: Session, wiki_id: str):
     return db.query(models.WikiInstance).filter(models.WikiInstance.id == wiki_id).first()
